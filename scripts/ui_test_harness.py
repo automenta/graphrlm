@@ -17,10 +17,6 @@ sys.modules["graph_rlm.backend.src.core.database"] = MagicMock()
 sys.modules["graph_rlm.backend.src.core.database.client"] = MagicMock()
 
 # We also need to mock the AgentWorker because the one in UI imports the backend
-# However, we are replacing AgentWorker anyway. The issue is that the file *imports* the backend.
-# By mocking the backend modules above, the import in AgentWorker will succeed (importing a mock)
-# and not trigger the database connection.
-
 from graph_rlm.ui.windows.main_window import MainWindow
 import graph_rlm.ui.threads.agent_worker
 
@@ -35,6 +31,7 @@ class MockAgentWorker(QObject):
     chatMessage = pyqtSignal(str, str)
     statusChanged = pyqtSignal(str)
     finished = pyqtSignal()
+    initialLoadComplete = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -46,13 +43,15 @@ class MockAgentWorker(QObject):
         self.logMessage.emit("INFO", "Mock Agent Started")
 
         # Simulate some initial chatter
-        QTimer.singleShot(1000, lambda: self.chatMessage.emit("user", "Analyze the system architecture."))
-        QTimer.singleShot(2000, lambda: self.chatMessage.emit("assistant", "Sure, starting analysis..."))
+        QTimer.singleShot(500, lambda: self.chatMessage.emit("user", "Perform a security audit of the authentication module."))
+        QTimer.singleShot(1500, lambda: self.chatMessage.emit("assistant", "Initiating security audit protocol v2.4.\nMapping dependency graph..."))
 
         # Start generating thoughts
         self.timer = QTimer()
         self.timer.timeout.connect(self._generate_event)
         self.timer.start(800) # Every 800ms
+
+        QTimer.singleShot(500, self.initialLoadComplete.emit)
 
     def stop(self):
         self.timer.stop()
@@ -63,21 +62,30 @@ class MockAgentWorker(QObject):
 
     def send_query(self, prompt):
         self.chatMessage.emit("user", prompt)
-        QTimer.singleShot(500, lambda: self.chatMessage.emit("assistant", f"I received: {prompt}. Processing..."))
+        QTimer.singleShot(500, lambda: self.chatMessage.emit("assistant", f"Acknowledged. Processing query: {prompt}"))
 
     def _generate_event(self):
-        action = random.choice(["new_node", "update_node", "new_node", "log"])
+        action = random.choice(["new_node", "update_node", "new_node", "log", "log"])
 
         if action == "new_node" or not self.nodes:
             self.node_count += 1
             node_id = f"node_{self.node_count}"
+
+            prompts = [
+                "Analyze the dependency graph for potential cycle violations in the core module.",
+                "Verify that the user authentication flow adheres to the OAuth 2.0 specification.",
+                "Optimizing database queries for the analytics dashboard to reduce latency below 200ms.",
+                "Refactoring the legacy payment gateway integration to support multi-currency transactions."
+            ]
+
             node_data = {
                 "id": node_id,
                 "status": "pending",
-                "label": f"Thinking about step {self.node_count}...",
-                "prompt": f"Detailed prompt for step {self.node_count}",
+                "label": f"Task: {prompts[self.node_count % len(prompts)][:30]}...",
+                "prompt": prompts[self.node_count % len(prompts)],
                 "priority": random.choice(["high", "medium", "low"]),
-                "recency": 1.0
+                "recency": 1.0,
+                "result": ""
             }
             self.nodes.append(node_id)
             self.thoughtCreated.emit(node_data)
@@ -93,15 +101,29 @@ class MockAgentWorker(QObject):
             if not self.nodes: return
             node_id = random.choice(self.nodes)
             status = random.choice(["running", "success", "failed", "reflexion"])
+
+            results = {
+                "success": "Operation completed successfully.\n- 45 unit tests passed.\n- Latency: 15ms.\n- Memory Usage: 12MB.",
+                "failed": "Error: Connection timeout while reaching the external API.\nStack trace:\n  File 'net.py', line 45, in connect\n    raise TimeoutError",
+                "reflexion": "Axiom Violation detected: ensure_no_cycles().\nGraph contains a cycle at node_3 -> node_1.\nRefactoring required.",
+                "running": "Processing... Step 3/5 complete."
+            }
+
             self.thoughtUpdated.emit({
                 "id": node_id,
                 "status": status,
-                "result": "Operation complete." if status == "success" else "Error occurred."
+                "result": results.get(status, "")
             })
             self.logMessage.emit("DEBUG", f"Updated node {node_id} to {status}")
 
         elif action == "log":
-            self.logMessage.emit("INFO", "System doing background work...")
+            msgs = [
+                "Running background cleanup task...",
+                "Syncing graph state to persistence layer...",
+                "Memory usage: 45% (Stable)",
+                "Heartbeat received from worker thread."
+            ]
+            self.logMessage.emit("INFO", random.choice(msgs))
 
 def main():
     app = QApplication(sys.argv)
@@ -136,16 +158,26 @@ def main():
                 pass
 
         def close_app():
+            # Select a node to verify inspector
+            if window.graph_widget.scene.nodes:
+                # Select the last node
+                last_node = list(window.graph_widget.scene.nodes.values())[-1]
+                last_node.setSelected(True)
+                print(f"Selected node: {last_node.node_data['id']}")
+
             if screenshot_path:
                 print(f"Taking screenshot to {screenshot_path}")
-                # Ensure geometry is laid out
+                # Ensure geometry is laid out and selection is processed
                 app.processEvents()
+                time.sleep(0.5) # Wait for selection processing
+                app.processEvents()
+
                 # Grab window
                 pixmap = window.grab()
                 pixmap.save(screenshot_path)
             app.quit()
 
-        QTimer.singleShot(3000, close_app)
+        QTimer.singleShot(4000, close_app)
 
     sys.exit(app.exec())
 
